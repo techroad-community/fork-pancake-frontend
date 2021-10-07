@@ -81,44 +81,44 @@ export const fetchCollection = createAsyncThunk<Record<string, Collection>, stri
  * and the Subgraph (dynamic market data)
  * @param collectionAddress
  */
-export const fetchNftsFromCollections = createAsyncThunk(
-  'nft/fetchNftsFromCollections',
-  async (collectionAddress: string) => {
-    try {
-      if (collectionAddress === pancakeBunniesAddress) {
-        // PancakeBunnies don't need to pre-fetch "all nfts" from the collection
-        // When user visits IndividualNFTPage required nfts will be fetched via bunny id
-        return []
-      }
-      const [nfts, nftsMarket] = await Promise.all([
-        getNftsFromCollectionApi(collectionAddress),
-        getNftsFromCollectionSg(collectionAddress),
-      ])
-
-      if (!nfts?.data) {
-        return []
-      }
-
-      return Object.keys(nfts.data).map((id) => {
-        const apiMetadata = nfts.data[id]
-        const marketData = nftsMarket.find((nft) => nft.tokenId === id)
-        return {
-          tokenId: id,
-          name: apiMetadata.name,
-          description: apiMetadata.description,
-          collectionName: apiMetadata.collection.name,
-          collectionAddress,
-          image: apiMetadata.image,
-          marketData,
-          attributes: apiMetadata.attributes,
-        }
-      })
-    } catch (error) {
-      console.error(`Failed to fetch collection NFTs for ${collectionAddress}`, error)
+export const fetchNftsFromCollections = createAsyncThunk<
+  NftToken[],
+  { collectionAddress: string; page: number; size: number }
+>('nft/fetchNftsFromCollections', async ({ collectionAddress, page, size }) => {
+  try {
+    if (collectionAddress === pancakeBunniesAddress) {
+      // PancakeBunnies don't need to pre-fetch "all nfts" from the collection
+      // When user visits IndividualNFTPage required nfts will be fetched via bunny id
       return []
     }
-  },
-)
+    const [nfts, nftsMarket] = await Promise.all([
+      getNftsFromCollectionApi(collectionAddress, size, page),
+      getNftsFromCollectionSg(collectionAddress, size, (page - 1) * size), // sg uses a skip value rather than page
+    ])
+
+    if (!nfts?.data) {
+      return []
+    }
+
+    return Object.keys(nfts.data).map((id) => {
+      const apiMetadata = nfts.data[id]
+      const marketData = nftsMarket.find((nft) => nft.tokenId === id)
+      return {
+        tokenId: id,
+        name: apiMetadata.name,
+        description: apiMetadata.description,
+        collectionName: apiMetadata.collection.name,
+        collectionAddress,
+        image: apiMetadata.image,
+        marketData,
+        attributes: apiMetadata.attributes,
+      }
+    })
+  } catch (error) {
+    console.error(`Failed to fetch collection NFTs for ${collectionAddress}`, error)
+    return []
+  }
+})
 
 /**
  * This action keeps data on the individual PancakeBunny page up-to-date. Operation is a twofold
@@ -190,7 +190,10 @@ export const updateUserNft = createAsyncThunk<
   NftToken,
   { tokenId: string; collectionAddress: string; location?: NftLocation }
 >('nft/updateUserNft', async ({ tokenId, collectionAddress, location = NftLocation.WALLET }) => {
-  const marketDataForNft = await getNftsMarketData({ tokenId_in: [tokenId] })
+  const marketDataForNft = await getNftsMarketData({
+    tokenId_in: [tokenId],
+    collection: collectionAddress.toLowerCase(),
+  })
   const metadataForNft = await getNftsFromDifferentCollectionsApi([{ tokenId, collectionAddress }])
   const completeNftData = { ...metadataForNft[0], location, marketData: marketDataForNft[0] }
 
@@ -206,13 +209,17 @@ export const addUserNft = createAsyncThunk<
   NftToken,
   { tokenId: string; collectionAddress: string; nftLocation?: NftLocation }
 >('nft/addUserNft', async ({ tokenId, collectionAddress, nftLocation = NftLocation.WALLET }) => {
-  const marketDataForNft = await getNftsMarketData({ tokenId_in: [tokenId] })
+  const marketDataForNft = await getNftsMarketData({
+    tokenId_in: [tokenId],
+    collection: collectionAddress.toLowerCase(),
+  })
   const metadataForNft = await getNftsFromDifferentCollectionsApi([{ tokenId, collectionAddress }])
 
-  const tokens = { [tokenId]: { ...marketDataForNft[0], nftLocation } }
-  const completeNftData = { ...metadataForNft[0], tokens }
-
-  return completeNftData
+  return {
+    ...metadataForNft[0],
+    location: nftLocation,
+    marketData: marketDataForNft[0],
+  }
 })
 
 export const fetchUserActivity = createAsyncThunk('nft/fetchUserActivity', async (address: string) => {
@@ -233,8 +240,9 @@ export const NftMarket = createSlice({
       state.initializationState = NFTMarketInitializationState.INITIALIZED
     })
     builder.addCase(fetchNftsFromCollections.fulfilled, (state, action) => {
-      const existingNfts = state.data.nfts[action.meta.arg] ?? []
-      state.data.nfts[action.meta.arg] = [...existingNfts, ...action.payload]
+      const { collectionAddress } = action.meta.arg
+      const existingNfts = state.data.nfts[collectionAddress] ?? []
+      state.data.nfts[collectionAddress] = [...existingNfts, ...action.payload]
     })
     builder.addCase(fetchNewPBAndUpdateExisting.pending, (state) => {
       state.data.loadingState.isUpdatingPancakeBunnies = true

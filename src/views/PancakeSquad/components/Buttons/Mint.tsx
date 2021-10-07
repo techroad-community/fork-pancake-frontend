@@ -38,7 +38,7 @@ const MintButton: React.FC<PreEventProps> = ({ t, theme, saleStatus, numberTicke
       isLoading={isLoading}
       headerBackground={theme.colors.gradients.cardHeader}
       txHash={txHashMintingResult}
-      loadingText={t('Please enable BNB spending in your wallet')}
+      loadingText={t('Please confirm your transaction in wallet.')}
       loadingButtonLabel={t('Minting...')}
       successButtonLabel={t('Close')}
       onConfirmClose={onConfirmClose}
@@ -56,6 +56,7 @@ const MintButton: React.FC<PreEventProps> = ({ t, theme, saleStatus, numberTicke
         setTxHashMintingResult(receipt.transactionHash)
       }
     } catch (error) {
+      console.error(error)
       onDismiss()
       toastError(t('Error'), t('Please try again. Confirm the transaction and make sure you are paying enough gas!'))
     } finally {
